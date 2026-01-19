@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Gran Llanero - Ventas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #e63946; /* Rojo llanero */
+            --secondary: #ffb703; /* Amarillo/Dorado */
+            --dark: #1d3557;
+            --light: #f1faee;
+        }
+        body { background-color: var(--light); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .category-carousel { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 15px; padding: 10px; scrollbar-width: none; }
+        .category-carousel::-webkit-scrollbar { display: none; }
+        .product-card { flex: 0 0 250px; scroll-snap-align: start; background: white; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .modal { display: none; position: fixed; z-index: 50; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+
+    <header class="bg-white shadow-md p-4 sticky top-0 z-40">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <img src="logo.jpg" alt="Logo" class="h-12 w-12 rounded-full object-cover">
+                <div>
+                    <h1 class="text-xl font-bold text-red-600">El Gran Llanero</h1>
+                    <p class="text-xs text-gray-500">Carnicería y Delicateses</p>
+                </div>
+            </div>
+            <button onclick="toggleModal('modal-about')" class="text-sm font-semibold text-blue-600 border border-blue-600 px-3 py-1 rounded hover:bg-blue-50">
+                Acerca de esta web
+            </button>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 pb-24">
+        <div id="catalog-container">
+            <p class="text-center py-10">Cargando productos...</p>
+        </div>
+    </main>
+
+    <div id="cart-btn" class="fixed bottom-5 right-5 z-50 hidden">
+        <button onclick="showCheckout()" class="bg-green-500 text-white p-4 rounded-full shadow-lg flex items-center gap-2">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+        </button>
+    </div>
+
+    <div id="modal-about" class="modal flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg max-w-sm w-full m-4 relative">
+            <button onclick="toggleModal('modal-about')" class="absolute top-2 right-2 text-gray-400 text-2xl">&times;</button>
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">Desarrollador</h2>
+            <p class="text-gray-700"><strong>Antonio Itriago</strong></p>
+            <p class="text-sm text-gray-600 mb-4">Analista, diseñador y desarrollador de sistemas de información computarizados.</p>
+            <a href="https://wa.me/584122525407" class="text-green-600 font-bold flex items-center gap-2">
+                Contacto: wa.me/584122525407
+            </a>
+        </div>
+    </div>
+
+    <div id="modal-checkout" class="modal flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg max-w-lg w-full m-4 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-2xl font-bold mb-4">Confirmar Pedido</h2>
+            <div id="order-details" class="space-y-2 mb-4"></div>
+            <div id="bcv-info" class="bg-blue-50 p-3 rounded mb-4 text-sm"></div>
+            <div class="border-t pt-4 font-bold text-lg">
+                <p id="total-usd"></p>
+                <p id="total-ves" class="text-green-700"></p>
+                <p id="delivery-msg" class="text-blue-600 text-sm mt-2 font-normal"></p>
+            </div>
+            <div class="flex gap-2 mt-6">
+                <button onclick="toggleModal('modal-checkout')" class="flex-1 bg-gray-200 py-2 rounded">Cerrar</button>
+                <button onclick="sendWhatsApp()" class="flex-1 bg-green-600 text-white py-2 rounded font-bold">Enviar WhatsApp</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsTRhoswf3zopWO5PEusQsYdYglnUlWTX9HzFIvewpy4vED9fQbs9Z0V3EdQ-AGMGLlpmcs_LL_cP3/pub?gid=0&single=true&output=tsv';
+        const WA_NUMBER = "584122525407";
+        let cart = [];
+        let bcvRate = 0;
+
+        // 1. Obtener Tasa BCV
+        async function fetchBCV() {
+            try {
+                // Usando una API confiable para BCV (puedes cambiar el endpoint si tienes uno específico)
+                const response = await fetch('https://pydolarve.org/api/v1/dollar?page=bcv');
+                const data = await response.json();
+                bcvRate = data.monitors.usd.price;
+            } catch (e) {
+                console.error("Error BCV:", e);
+                bcvRate = 50; // Valor de respaldo
+            }
+        }
+
+        // 2. Cargar Datos de Google Sheet
+        async function loadProducts() {
+            await fetchBCV();
+            const response = await fetch(TSV_URL);
+            const text = await response.text();
+            const rows = text.split('\n').slice(1); // Ignorar cabecera
+
+            const categories = {};
+            rows.forEach(row => {
+                const [id, name, price, currency, description, category] = row.split('\t');
+                if (!categories[category]) categories[category] = [];
+                categories[category].push({ id, name, price: parseFloat(price), currency, description });
+            });
+
+            renderCatalog(categories);
+        }
+
+        function renderCatalog(categories) {
+            const container = document.getElementById('catalog-container');
+            container.innerHTML = '';
+
+            for (let cat in categories) {
+                const section = document.createElement('div');
+                section.innerHTML = `
+                    <h2 class="text-xl font-bold mt-6 mb-2 text-gray-800 uppercase tracking-wide">${cat}</h2>
+                    <div class="category-carousel">
+                        ${categories[cat].map(p => `
+                            <div class="product-card p-4 flex flex-col justify-between">
+                                <div>
+                                    <h3 class="font-bold text-lg">${p.name}</h3>
+                                    <p class="text-sm text-gray-500 line-clamp-2">${p.description}</p>
+                                    <p class="text-red-600 font-bold mt-2">$${p.price.toFixed(2)}</p>
+                                </div>
+                                <button onclick="addToCart('${p.id}', '${p.name}', ${p.price})" class="mt-4 bg-red-600 text-white py-2 rounded-lg active:scale-95 transition-transform">
+                                    Añadir al Carrito
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(section);
+            }
+        }
+
+        // 3. Lógica del Carrito
+        function addToCart(id, name, price) {
+            const index = cart.findIndex(item => item.id === id);
+            if (index > -1) {
+                cart[index].qty++;
+            } else {
+                cart.push({ id, name, price, qty: 1 });
+            }
+            updateCartIcon();
+        }
+
+        function updateCartIcon() {
+            const btn = document.getElementById('cart-btn');
+            const count = cart.reduce((acc, item) => acc + item.qty, 0);
+            document.getElementById('cart-count').innerText = count;
+            btn.classList.toggle('hidden', count === 0);
+        }
+
+        function toggleModal(id) {
+            const m = document.getElementById(id);
+            m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        function showCheckout() {
+            const details = document.getElementById('order-details');
+            let total = 0;
+            details.innerHTML = cart.map(item => {
+                total += (item.price * item.qty);
+                return `<div class="flex justify-between text-sm">
+                    <span>${item.qty}x ${item.name}</span>
+                    <span>$${(item.price * item.qty).toFixed(2)}</span>
+                </div>`;
+            }).join('');
+
+            const totalVes = total * bcvRate;
+            
+            document.getElementById('bcv-info').innerText = `Tasa BCV del día: ${bcvRate} Bs./USD`;
+            document.getElementById('total-usd').innerText = `Total: $${total.toFixed(2)}`;
+            document.getElementById('total-ves').innerText = `Total en Bolívares: ${totalVes.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs.`;
+            
+            // Simulación de cálculo de delivery (multiplicado por 2 según instrucción)
+            // En un caso real aquí usarías Geolocation API y una API de distancia.
+            const distSimulada = 5; 
+            const costoDelivery = distSimulada * 2;
+            document.getElementById('delivery-msg').innerText = `El costo aproximado de delivery es: $${costoDelivery.toFixed(2)}`;
+
+            toggleModal('modal-checkout');
+        }
+
+        function sendWhatsApp() {
+            let total = 0;
+            let text = `*Pedido El Gran Llanero*\n--------------------------\n`;
+            cart.forEach(item => {
+                text += `• ${item.qty}x ${item.name} ($${(item.price * item.qty).toFixed(2)})\n`;
+                total += (item.price * item.qty);
+            });
+            
+            const totalVes = total * bcvRate;
+            text += `--------------------------\n`;
+            text += `*Total USD:* $${total.toFixed(2)}\n`;
+            text += `*Tasa BCV:* ${bcvRate} Bs.\n`;
+            text += `*Total Bs:* ${totalVes.toFixed(2)} Bs.\n\n`;
+            text += `_Por favor, confírmeme el costo de envío a mi ubicación actual._`;
+
+            const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        }
+
+        // Inicializar
+        loadProducts();
+    </script>
+</body>
+</html>
